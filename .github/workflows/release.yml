@@ -6,7 +6,7 @@ on:
       - main
       - master
     paths:
-      - 'assets/config.json'
+      - 'assets/config_template.json'
       - '.github/workflows/release.yml'
 
 jobs:
@@ -30,7 +30,7 @@ jobs:
         with:
           tag-template: "{VERSION}"
           version-command: |
-            bash -o pipefail -c "cat ./assets/config.json | jq -r '.version'"
+            bash -o pipefail -c "cat ./assets/config_template.json | jq -r '.version'"
 
       - name: Create CHANGELOG.md
         if: steps.check-version.outputs.tag

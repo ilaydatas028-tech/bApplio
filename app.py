@@ -1,11 +1,28 @@
+# Make sure the config file exists
+import os
+import shutil
+import sys
+
+# We need the CWD for finding the config file, but while we're at it, add it to sys.path
+now_dir = os.getcwd()
+sys.path.append(now_dir)
+
+# TODO: This path is regenerated all over the place in Applio
+# should probably be in a static module for everything to reference
+CONFIG_PATH = os.path.join(now_dir, "assets", "config.json")
+
+# The base config file to start from
+CONFIG_TEMPLATE_PATH = os.path.join(now_dir, "assets", "config_template.json")
+
+if not os.path.exists(CONFIG_PATH):
+    print("Config file not found. Creating fresh from template.")
+    shutil.copy(CONFIG_TEMPLATE_PATH, CONFIG_PATH)
+    
 # Plataform config
 from rvc.lib.platform import platform_config
-
 platform_config()
 
 import gradio as gr
-import sys
-import os
 import pathlib
 import logging
 
@@ -19,9 +36,23 @@ MAX_PORT_ATTEMPTS = 10
 logging.getLogger("uvicorn").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
 
-# Add current directory to sys.path
-now_dir = os.getcwd()
-sys.path.append(now_dir)
+# Suppress ConnectionResetError on Windows when a remote peer forcibly closes the
+# connection during asyncio shutdown (WinError 10054 / ProactorBasePipeTransport).
+if sys.platform == "win32":
+    import asyncio.proactor_events as _pe
+
+    _orig_ccl = _pe._ProactorBasePipeTransport._call_connection_lost
+
+    def _ccl_patched(self, exc):
+        try:
+            _orig_ccl(self, exc)
+        except ConnectionResetError:
+            pass
+
+    _pe._ProactorBasePipeTransport._call_connection_lost = _ccl_patched
+
+# detect gradio
+GRADIO_6 = int(gr.__version__.split(".")[0]) >= 6
 
 # Zluda hijack
 import rvc.lib.zluda
@@ -74,6 +105,25 @@ client_mode = "--client" in sys.argv
 # Define Gradio interface
 with gr.Blocks(
     title="Applio",
+    **(
+        {
+            "theme": my_applio,
+            "css": "footer{display:none !important}",
+            "js": (
+                (
+                    "() => {\n"
+                    + pathlib.Path(
+                        os.path.join(now_dir, "tabs", "realtime", "main.js")
+                    ).read_text()
+                    + "\n}"
+                )
+                if client_mode
+                else None
+            ),
+        }
+        if not GRADIO_6
+        else {}
+    ),
 ) as Applio:
     gr.Markdown("# Applio")
     gr.Markdown(
@@ -83,7 +133,7 @@ with gr.Blocks(
     )
     gr.Markdown(
         i18n(
-            "[Support](https://discord.gg/urxFjYmYYh) — [GitHub](https://github.com/IAHispano/Applio)"
+            "[Support](https://discord.gg/wY7gmqTyEV) — [GitHub](https://github.com/IAHispano/Applio)"
         )
     )
     with gr.Tab(i18n("Inference")):
@@ -131,14 +181,20 @@ def launch_gradio(server_name: str, server_port: int) -> None:
         server_name=server_name,
         server_port=server_port,
         prevent_thread_lock=client_mode,
-        theme=my_applio,
-        css="footer{display:none !important}",
-        js=(
-            pathlib.Path(
-                os.path.join(now_dir, "tabs", "realtime", "main.js")
-            ).read_text()
-            if client_mode
-            else None
+        **(
+            {
+                "theme": my_applio,
+                "css": "footer{display:none !important}",
+                "js": (
+                    pathlib.Path(
+                        os.path.join(now_dir, "tabs", "realtime", "main.js")
+                    ).read_text()
+                    if client_mode
+                    else None
+                ),
+            }
+            if GRADIO_6
+            else {}
         ),
     )
 
